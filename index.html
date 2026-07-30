@@ -60,26 +60,9 @@
     height: 32px;
     object-fit: contain;
   }
-  #startBtn {
-    background: none;
-    border: 1px solid #0ff;
-    color: #0ff;
-    font-family: 'Courier New', monospace;
-    font-size: 16px;
-    letter-spacing: 2px;
-    padding: 8px 20px;
-    margin-top: 14px;
-    text-shadow: 0 0 8px #0ff;
-    box-shadow: 0 0 8px rgba(0,255,255,0.4);
-    outline: none;
-    pointer-events: auto;
-  }
-  #startBtn:focus {
-    background: rgba(0,255,255,0.15);
-  }
   #donate {
     position: absolute;
-    bottom: 6px;
+    bottom: 24px;
     left: 0;
     width: 600px;
     text-align: center;
@@ -88,7 +71,19 @@
     opacity: 0.35;
     text-decoration: none;
   }
-  #donate:focus, #donate:hover { opacity: 0.7; }
+  #debug {
+    position: absolute;
+    bottom: 4px;
+    left: 0;
+    width: 600px;
+    text-align: center;
+    font-size: 10px;
+    color: #ff0;
+    opacity: 0.9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 </style>
 </head>
 <body>
@@ -100,9 +95,10 @@
   <div id="center-msg">
     <h1>SLICE</h1>
     <p>← → move &nbsp; ENTER slice</p>
-    <button id="startBtn">ENTER</button>
+    <p>press any button to start</p>
   </div>
   <a id="donate" href="#">donate</a>
+  <div id="debug">no input detected yet</div>
 </div>
 
 <script>
@@ -111,42 +107,32 @@ const svg = document.getElementById('svgLayer');
 const hud = document.getElementById('hud');
 const livesEl = document.getElementById('lives');
 const centerMsg = document.getElementById('center-msg');
+const debugEl = document.getElementById('debug');
 
 const LANES = 3;
 const LANE_WIDTH = 600 / LANES;
-const SLICE_ZONE_Y = 480; // where slicing is effective
+const SLICE_ZONE_Y = 480;
 const SLICE_ZONE_HEIGHT = 70;
 const GROUND_Y = 600;
 
 const FRUITS = [
-  { emoji: '🍎', color: '#ff4444' },
-  { emoji: '🍊', color: '#ff9933' },
-  { emoji: '🍋', color: '#ffee55' },
-  { emoji: '🍉', color: '#44dd66' },
-  { emoji: '🍇', color: '#aa66ff' },
+  { emoji: '🍎' }, { emoji: '🍊' }, { emoji: '🍋' }, { emoji: '🍉' }, { emoji: '🍇' }
 ];
-const BOMB = { emoji: '💣', color: '#888888' };
+const BOMB = { emoji: '💣' };
 
-let state = 'IDLE'; // IDLE, PLAYING, GAMEOVER
+let state = 'IDLE';
 let cursorLane = 1;
 let score = 0;
 let lives = 3;
-let objects = []; // {el, lane, y, speed, type, sliced}
+let objects = [];
 let spawnTimer = 0;
-let spawnInterval = 90; // frames
-let tickCount = 0;
-let lastTime = null;
+let spawnInterval = 90;
 let cursorEl = null;
 let comboCount = 0;
 let comboTimer = 0;
 
-function laneCenterX(lane) {
-  return lane * LANE_WIDTH + LANE_WIDTH / 2;
-}
-
-function clearSvg() {
-  while (svg.firstChild) svg.removeChild(svg.firstChild);
-}
+function laneCenterX(lane) { return lane * LANE_WIDTH + LANE_WIDTH / 2; }
+function clearSvg() { while (svg.firstChild) svg.removeChild(svg.firstChild); }
 
 function drawCursor() {
   if (cursorEl) svg.removeChild(cursorEl);
@@ -163,14 +149,11 @@ function drawCursor() {
   rect.setAttribute('opacity', '0.5');
   rect.setAttribute('rx', '8');
   cursorEl.appendChild(rect);
-
   const tri = document.createElementNS(NS, 'polygon');
-  const tx = x;
-  const ty = SLICE_ZONE_Y - 22;
+  const tx = x, ty = SLICE_ZONE_Y - 22;
   tri.setAttribute('points', `${tx-10},${ty} ${tx+10},${ty} ${tx},${ty+14}`);
   tri.setAttribute('fill', '#0ff');
   cursorEl.appendChild(tri);
-
   svg.appendChild(cursorEl);
 }
 
@@ -185,28 +168,19 @@ function spawnObject() {
   el.setAttribute('text-anchor', 'middle');
   el.textContent = kind.emoji;
   svg.appendChild(el);
-
   const baseSpeed = 2.2 + Math.random() * 0.6;
   const speedScale = 1 + Math.min(score, 300) / 300 * 0.9;
-
-  objects.push({
-    el, lane, y: -20,
-    speed: baseSpeed * speedScale,
-    type: isBomb ? 'bomb' : 'fruit',
-    sliced: false
-  });
+  objects.push({ el, lane, y: -20, speed: baseSpeed * speedScale, type: isBomb ? 'bomb' : 'fruit', sliced: false });
 }
 
 function sliceEffect(obj) {
-  const x = laneCenterX(obj.lane);
-  const y = obj.y;
+  const x = laneCenterX(obj.lane), y = obj.y;
   const g = document.createElementNS(NS, 'g');
   const colors = obj.type === 'bomb' ? ['#ff8800','#ffcc00'] : ['#ffffff', '#0ff'];
   for (let i = 0; i < 6; i++) {
     const angle = (Math.PI * 2 / 6) * i;
     const line = document.createElementNS(NS, 'line');
-    line.setAttribute('x1', x);
-    line.setAttribute('y1', y);
+    line.setAttribute('x1', x); line.setAttribute('y1', y);
     line.setAttribute('x2', x + Math.cos(angle) * 30);
     line.setAttribute('y2', y + Math.sin(angle) * 30);
     line.setAttribute('stroke', colors[i % 2]);
@@ -218,12 +192,8 @@ function sliceEffect(obj) {
   let opacity = 0.9;
   const fade = setInterval(() => {
     opacity -= 0.15;
-    if (opacity <= 0) {
-      clearInterval(fade);
-      if (g.parentNode) svg.removeChild(g);
-    } else {
-      g.setAttribute('opacity', opacity);
-    }
+    if (opacity <= 0) { clearInterval(fade); if (g.parentNode) svg.removeChild(g); }
+    else g.setAttribute('opacity', opacity);
   }, 30);
 }
 
@@ -234,116 +204,93 @@ function updateHud() {
 
 function resetGame() {
   clearSvg();
-  objects = [];
-  score = 0;
-  lives = 3;
-  comboCount = 0;
-  comboTimer = 0;
-  spawnTimer = 0;
-  spawnInterval = 90;
-  cursorLane = 1;
+  objects = []; score = 0; lives = 3; comboCount = 0; comboTimer = 0;
+  spawnTimer = 0; spawnInterval = 90; cursorLane = 1;
+  cursorEl = null;
   updateHud();
-  drawCursor();
 }
 
 function gameOver() {
   state = 'GAMEOVER';
-  centerMsg.innerHTML = `<h1>GAME OVER</h1><p>score: ${score}</p><button id="startBtn">RETRY</button>`;
+  clearSvg();
+  cursorEl = null;
+  centerMsg.innerHTML = `<h1>GAME OVER</h1><p>score: ${score}</p><p>press any button to retry</p>`;
   centerMsg.style.display = 'block';
-  const btn = document.getElementById('startBtn');
-  wireStartButton(btn);
-  btn.focus();
 }
 
 function startGame() {
   resetGame();
   state = 'PLAYING';
   centerMsg.style.display = 'none';
+  drawCursor();
 }
 
 function slice() {
-  if (state !== 'PLAYING') {
-    startGame();
-    return;
-  }
+  if (state !== 'PLAYING') { startGame(); return; }
   let hitSomething = false;
   for (const obj of objects) {
     if (obj.sliced) continue;
     if (obj.lane !== cursorLane) continue;
     if (obj.y >= SLICE_ZONE_Y - 20 && obj.y <= SLICE_ZONE_Y + SLICE_ZONE_HEIGHT) {
-      obj.sliced = true;
-      hitSomething = true;
+      obj.sliced = true; hitSomething = true;
       sliceEffect(obj);
       if (svg.contains(obj.el)) svg.removeChild(obj.el);
       if (obj.type === 'bomb') {
-        lives -= 1;
-        comboCount = 0;
-        if (lives <= 0) {
-          updateHud();
-          gameOver();
-          return;
-        }
+        lives -= 1; comboCount = 0;
+        if (lives <= 0) { updateHud(); gameOver(); return; }
       } else {
-        comboCount += 1;
-        comboTimer = 40;
+        comboCount += 1; comboTimer = 40;
         const multiplier = comboCount >= 3 ? 3 : (comboCount === 2 ? 2 : 1);
         score += 10 * multiplier;
       }
       updateHud();
     }
   }
-  if (!hitSomething) {
-    comboCount = 0;
-  }
+  if (!hitSomething) comboCount = 0;
 }
 
 function moveLane(dir) {
+  if (state !== 'PLAYING') return;
   cursorLane = Math.max(0, Math.min(LANES - 1, cursorLane + dir));
   drawCursor();
 }
 
 function tick() {
   if (state === 'PLAYING') {
-    tickCount++;
     spawnTimer++;
     if (spawnTimer >= spawnInterval) {
       spawnTimer = 0;
       spawnObject();
       spawnInterval = Math.max(35, 90 - Math.floor(score / 20));
     }
-    if (comboTimer > 0) {
-      comboTimer--;
-      if (comboTimer === 0) comboCount = 0;
-    }
-
+    if (comboTimer > 0) { comboTimer--; if (comboTimer === 0) comboCount = 0; }
     for (let i = objects.length - 1; i >= 0; i--) {
       const obj = objects[i];
-      if (obj.sliced) {
-        objects.splice(i, 1);
-        continue;
-      }
+      if (obj.sliced) { objects.splice(i, 1); continue; }
       obj.y += obj.speed;
       obj.el.setAttribute('y', obj.y);
       if (obj.y > GROUND_Y + 10) {
         if (svg.contains(obj.el)) svg.removeChild(obj.el);
         objects.splice(i, 1);
         if (obj.type === 'fruit') {
-          lives -= 1;
-          comboCount = 0;
-          updateHud();
-          if (lives <= 0) {
-            gameOver();
-            return;
-          }
+          lives -= 1; comboCount = 0; updateHud();
+          if (lives <= 0) { gameOver(); return; }
         }
       }
     }
   }
+  pollGamepad();
   requestAnimationFrame(tick);
 }
 
+// ---- Input handling ----
+// We don't know exactly how MRBD's D-pad reports input to the webview, so
+// this listens broadly: keyboard events (key/code/keyCode, key & keyup),
+// and the Gamepad API, and shows the raw last event on screen so we can
+// see exactly what's arriving.
+
 function isEnterEvent(e) {
-  return e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter' || e.keyCode === 13;
+  return e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter' || e.keyCode === 13 || e.key === ' ' || e.code === 'Space' || e.keyCode === 32;
 }
 function isLeftEvent(e) {
   return e.key === 'ArrowLeft' || e.code === 'ArrowLeft' || e.keyCode === 37;
@@ -352,52 +299,68 @@ function isRightEvent(e) {
   return e.key === 'ArrowRight' || e.code === 'ArrowRight' || e.keyCode === 39;
 }
 
+function showDebug(text) {
+  debugEl.textContent = text;
+}
+
 function handleKey(e) {
-  if (isLeftEvent(e)) {
-    moveLane(-1);
-  } else if (isRightEvent(e)) {
-    moveLane(1);
-  } else if (isEnterEvent(e)) {
+  showDebug(`${e.type}: key="${e.key}" code="${e.code}" keyCode=${e.keyCode}`);
+  if (isLeftEvent(e)) { moveLane(-1); }
+  else if (isRightEvent(e)) { moveLane(1); }
+  else if (isEnterEvent(e)) { slice(); }
+  else if (state !== 'PLAYING') {
+    // unknown key while on a start/retry screen - be lenient, any button starts
     slice();
   }
 }
 
-// Listen on both document and window - some webviews only dispatch to one
 document.addEventListener('keydown', handleKey);
 window.addEventListener('keydown', handleKey);
+document.addEventListener('keyup', handleKey);
+window.addEventListener('keyup', handleKey);
 
-function wireStartButton(btn) {
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    if (state !== 'PLAYING') startGame();
-  });
-  btn.addEventListener('keydown', (e) => {
-    if (isEnterEvent(e)) {
-      e.preventDefault();
-      if (state !== 'PLAYING') startGame();
+// ---- Gamepad API fallback ----
+// Some AR/controller-based devices report D-pad input through the
+// Gamepad API instead of keyboard events.
+let gamepadPrevButtons = [];
+let gamepadSeen = false;
+
+window.addEventListener('gamepadconnected', (e) => {
+  showDebug(`gamepad connected: ${e.gamepad.id}`);
+});
+
+function pollGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (const gp of pads) {
+    if (!gp) continue;
+    gamepadSeen = true;
+    const prev = gamepadPrevButtons[gp.index] || [];
+    gp.buttons.forEach((btn, i) => {
+      const wasPressed = prev[i] || false;
+      if (btn.pressed && !wasPressed) {
+        showDebug(`gamepad button ${i} pressed`);
+        // Standard mapping: 0 = confirm/A, 14 = dpad-left, 15 = dpad-right
+        if (i === 0 || i === 1) slice();
+        else if (i === 14) moveLane(-1);
+        else if (i === 15) moveLane(1);
+        else if (state !== 'PLAYING') slice();
+      }
+    });
+    gamepadPrevButtons[gp.index] = gp.buttons.map(b => b.pressed);
+    // Analog stick / dpad axes fallback
+    if (Math.abs(gp.axes[0]) > 0.7) {
+      // throttle via timestamp-based debounce could be added if needed
     }
-  });
+  }
 }
 
-// Donate link - external https links can error in the MRBD webview,
-// so route through SMS body-prefill (opens Messages app on the paired phone)
+// Donate link routed through SMS body-prefill (external https can error in MRBD webview)
 const donateBody = encodeURIComponent(
   'Support Slice — donate via PayPal: https://www.paypal.com/donate?business=mike.t.hayashi@gmail.com&currency_code=USD'
 );
 document.getElementById('donate').href = 'sms:?body=' + donateBody;
 
 resetGame();
-wireStartButton(document.getElementById('startBtn'));
-
-// Some webviews won't dispatch keydown to the page until something has
-// focus - focus the start button immediately so the very first Enter
-// press is received.
-window.addEventListener('load', () => {
-  const btn = document.getElementById('startBtn');
-  if (btn) btn.focus();
-});
-document.getElementById('startBtn').focus();
-
 requestAnimationFrame(tick);
 </script>
 </body>
