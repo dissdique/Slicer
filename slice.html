@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Slice</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 600px;
+    height: 600px;
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+  }
+  #game {
+    width: 600px;
+    height: 600px;
+    position: relative;
+    background: #000;
+  }
+  svg { position: absolute; top: 0; left: 0; }
+  #hud {
+    position: absolute;
+    top: 12px;
+    left: 0;
+    width: 600px;
+    text-align: center;
+    color: #0ff;
+    font-size: 22px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 8px #0ff;
+    pointer-events: none;
+  }
+  #lives {
+    position: absolute;
+    top: 12px;
+    right: 20px;
+    color: #ff3355;
+    font-size: 20px;
+    text-shadow: 0 0 8px #ff3355;
+  }
+  #center-msg {
+    position: absolute;
+    top: 250px;
+    left: 0;
+    width: 600px;
+    text-align: center;
+    color: #0ff;
+    text-shadow: 0 0 10px #0ff;
+    pointer-events: none;
+  }
+  #center-msg h1 { font-size: 40px; margin: 0; }
+  #center-msg p { font-size: 18px; margin-top: 10px; opacity: 0.8; }
+</style>
+</head>
+<body>
+<div id="game">
+  <svg id="svgLayer" width="600" height="600"></svg>
+  <div id="hud">0</div>
+  <div id="lives">♥ ♥ ♥</div>
+  <div id="center-msg">
+    <h1>SLICE</h1>
+    <p>← → move &nbsp; ENTER slice</p>
+    <p>press ENTER to start</p>
+  </div>
+</div>
+
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById('svgLayer');
+const hud = document.getElementById('hud');
+const livesEl = document.getElementById('lives');
+const centerMsg = document.getElementById('center-msg');
+
+const LANES = 3;
+const LANE_WIDTH = 600 / LANES;
+const SLICE_ZONE_Y = 480; // where slicing is effective
+const SLICE_ZONE_HEIGHT = 70;
+const GROUND_Y = 600;
+
+const FRUITS = [
+  { emoji: '🍎', color: '#ff4444' },
+  { emoji: '🍊', color: '#ff9933' },
+  { emoji: '🍋', color: '#ffee55' },
+  { emoji: '🍉', color: '#44dd66' },
+  { emoji: '🍇', color: '#aa66ff' },
+];
+const BOMB = { emoji: '💣', color: '#888888' };
+
+let state = 'IDLE'; // IDLE, PLAYING, GAMEOVER
+let cursorLane = 1;
+let score = 0;
+let lives = 3;
+let objects = []; // {el, lane, y, speed, type, sliced}
+let spawnTimer = 0;
+let spawnInterval = 90; // frames
+let tickCount = 0;
+let lastTime = null;
+let cursorEl = null;
+let comboCount = 0;
+let comboTimer = 0;
+
+function laneCenterX(lane) {
+  return lane * LANE_WIDTH + LANE_WIDTH / 2;
+}
+
+function clearSvg() {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+}
+
+function drawCursor() {
+  if (cursorEl) svg.removeChild(cursorEl);
+  cursorEl = document.createElementNS(NS, 'g');
+  const x = laneCenterX(cursorLane);
+  const rect = document.createElementNS(NS, 'rect');
+  rect.setAttribute('x', x - LANE_WIDTH/2 + 6);
+  rect.setAttribute('y', SLICE_ZONE_Y - 10);
+  rect.setAttribute('width', LANE_WIDTH - 12);
+  rect.setAttribute('height', SLICE_ZONE_HEIGHT);
+  rect.setAttribute('fill', 'none');
+  rect.setAttribute('stroke', '#0ff');
+  rect.setAttribute('stroke-width', '2');
+  rect.setAttribute('opacity', '0.5');
+  rect.setAttribute('rx', '8');
+  cursorEl.appendChild(rect);
+
+  const tri = document.createElementNS(NS, 'polygon');
+  const tx = x;
+  const ty = SLICE_ZONE_Y - 22;
+  tri.setAttribute('points', `${tx-10},${ty} ${tx+10},${ty} ${tx},${ty+14}`);
+  tri.setAttribute('fill', '#0ff');
+  cursorEl.appendChild(tri);
+
+  svg.appendChild(cursorEl);
+}
+
+function spawnObject() {
+  const lane = Math.floor(Math.random() * LANES);
+  const isBomb = Math.random() < 0.15;
+  const kind = isBomb ? BOMB : FRUITS[Math.floor(Math.random() * FRUITS.length)];
+  const el = document.createElementNS(NS, 'text');
+  el.setAttribute('x', laneCenterX(lane));
+  el.setAttribute('y', -20);
+  el.setAttribute('font-size', '48');
+  el.setAttribute('text-anchor', 'middle');
+  el.textContent = kind.emoji;
+  svg.appendChild(el);
+
+  const baseSpeed = 2.2 + Math.random() * 0.6;
+  const speedScale = 1 + Math.min(score, 300) / 300 * 0.9;
+
+  objects.push({
+    el, lane, y: -20,
+    speed: baseSpeed * speedScale,
+    type: isBomb ? 'bomb' : 'fruit',
+    sliced: false
+  });
+}
+
+function sliceEffect(obj) {
+  const x = laneCenterX(obj.lane);
+  const y = obj.y;
+  const g = document.createElementNS(NS, 'g');
+  const colors = obj.type === 'bomb' ? ['#ff8800','#ffcc00'] : ['#ffffff', '#0ff'];
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI * 2 / 6) * i;
+    const line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', x);
+    line.setAttribute('y1', y);
+    line.setAttribute('x2', x + Math.cos(angle) * 30);
+    line.setAttribute('y2', y + Math.sin(angle) * 30);
+    line.setAttribute('stroke', colors[i % 2]);
+    line.setAttribute('stroke-width', '3');
+    line.setAttribute('opacity', '0.9');
+    g.appendChild(line);
+  }
+  svg.appendChild(g);
+  let opacity = 0.9;
+  const fade = setInterval(() => {
+    opacity -= 0.15;
+    if (opacity <= 0) {
+      clearInterval(fade);
+      if (g.parentNode) svg.removeChild(g);
+    } else {
+      g.setAttribute('opacity', opacity);
+    }
+  }, 30);
+}
+
+function updateHud() {
+  hud.textContent = score;
+  livesEl.textContent = '♥ '.repeat(lives).trim();
+}
+
+function resetGame() {
+  clearSvg();
+  objects = [];
+  score = 0;
+  lives = 3;
+  comboCount = 0;
+  comboTimer = 0;
+  spawnTimer = 0;
+  spawnInterval = 90;
+  cursorLane = 1;
+  updateHud();
+  drawCursor();
+}
+
+function gameOver() {
+  state = 'GAMEOVER';
+  centerMsg.innerHTML = `<h1>GAME OVER</h1><p>score: ${score}</p><p>press ENTER to retry</p>`;
+  centerMsg.style.display = 'block';
+}
+
+function startGame() {
+  resetGame();
+  state = 'PLAYING';
+  centerMsg.style.display = 'none';
+}
+
+function slice() {
+  if (state !== 'PLAYING') {
+    startGame();
+    return;
+  }
+  let hitSomething = false;
+  for (const obj of objects) {
+    if (obj.sliced) continue;
+    if (obj.lane !== cursorLane) continue;
+    if (obj.y >= SLICE_ZONE_Y - 20 && obj.y <= SLICE_ZONE_Y + SLICE_ZONE_HEIGHT) {
+      obj.sliced = true;
+      hitSomething = true;
+      sliceEffect(obj);
+      if (svg.contains(obj.el)) svg.removeChild(obj.el);
+      if (obj.type === 'bomb') {
+        lives -= 1;
+        comboCount = 0;
+        if (lives <= 0) {
+          updateHud();
+          gameOver();
+          return;
+        }
+      } else {
+        comboCount += 1;
+        comboTimer = 40;
+        const multiplier = comboCount >= 3 ? 3 : (comboCount === 2 ? 2 : 1);
+        score += 10 * multiplier;
+      }
+      updateHud();
+    }
+  }
+  if (!hitSomething) {
+    comboCount = 0;
+  }
+}
+
+function moveLane(dir) {
+  cursorLane = Math.max(0, Math.min(LANES - 1, cursorLane + dir));
+  drawCursor();
+}
+
+function tick() {
+  if (state === 'PLAYING') {
+    tickCount++;
+    spawnTimer++;
+    if (spawnTimer >= spawnInterval) {
+      spawnTimer = 0;
+      spawnObject();
+      spawnInterval = Math.max(35, 90 - Math.floor(score / 20));
+    }
+    if (comboTimer > 0) {
+      comboTimer--;
+      if (comboTimer === 0) comboCount = 0;
+    }
+
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const obj = objects[i];
+      if (obj.sliced) {
+        objects.splice(i, 1);
+        continue;
+      }
+      obj.y += obj.speed;
+      obj.el.setAttribute('y', obj.y);
+      if (obj.y > GROUND_Y + 10) {
+        if (svg.contains(obj.el)) svg.removeChild(obj.el);
+        objects.splice(i, 1);
+        if (obj.type === 'fruit') {
+          lives -= 1;
+          comboCount = 0;
+          updateHud();
+          if (lives <= 0) {
+            gameOver();
+            return;
+          }
+        }
+      }
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') {
+    moveLane(-1);
+  } else if (e.key === 'ArrowRight') {
+    moveLane(1);
+  } else if (e.key === 'Enter') {
+    slice();
+  }
+});
+
+resetGame();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
