@@ -304,6 +304,7 @@ function showDebug(text) {
 }
 
 function handleKey(e) {
+  if (e.repeat) return;
   showDebug(`${e.type}: key="${e.key}" code="${e.code}" keyCode=${e.keyCode}`);
   if (isLeftEvent(e)) { moveLane(-1); }
   else if (isRightEvent(e)) { moveLane(1); }
@@ -314,10 +315,10 @@ function handleKey(e) {
   }
 }
 
-document.addEventListener('keydown', handleKey);
+// Single listener only - registering on both document+window and both
+// keydown+keyup was causing each physical press to fire moveLane multiple
+// times, overshooting from the middle lane straight to an edge.
 window.addEventListener('keydown', handleKey);
-document.addEventListener('keyup', handleKey);
-window.addEventListener('keyup', handleKey);
 
 // ---- Gamepad API fallback ----
 // Some AR/controller-based devices report D-pad input through the
@@ -365,4 +366,3 @@ requestAnimationFrame(tick);
 </script>
 </body>
 </html>
-
